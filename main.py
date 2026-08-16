@@ -11,7 +11,7 @@ import os
 TOKEN = os.getenv("TOKEN") or "PASTE_YOUR_BOT_TOKEN_HERE"
 
 # Change this if your channel is named something other than "general"
-GENERAL_CHANNEL_NAME = "💬┆chat"
+GENERAL_CHANNEL_ID = 1485624474278690826
 
 PREFIX = "-"
 
@@ -95,7 +95,7 @@ async def on_message(message):
         return
 
     # Only count messages in #general
-    if message.guild and message.channel.name.lower() == GENERAL_CHANNEL_NAME.lower():
+    if message.guild and message.channel.id == GENERAL_CHANNEL_ID:
 
         guild_id = str(message.guild.id)
         user_id = str(message.author.id)
