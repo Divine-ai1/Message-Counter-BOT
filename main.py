@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-import json
+import sqlite3
 import os
 
 # =========================
@@ -10,61 +10,69 @@ import os
 
 TOKEN = os.getenv("TOKEN") or "PASTE_YOUR_BOT_TOKEN_HERE"
 
-# Change this if your channel is named something other than "general"
-GENERAL_CHANNEL_ID = 1485624474278690826
-
-PREFIX = "-"
+# PUT YOUR #GENERAL CHANNEL ID HERE
+GENERAL_CHANNEL_ID = 123456789012345678
 
 ARROW = "<a:vistoarrow:1537111766989799604>"
 
-DATA_FILE = "messages.json"
-
-
-# =========================
-# BOT SETUP
-# =========================
-
-intents = discord.Intents.default()
-intents.message_content = True
-intents.members = True
-
-bot = commands.Bot(
-    command_prefix=PREFIX,
-    intents=intents
-)
+DB_FILE = "messages.db"
 
 
 # =========================
 # DATABASE
 # =========================
 
-def load_data():
-    if not os.path.exists(DATA_FILE):
-        return {}
+db = sqlite3.connect(DB_FILE)
+cursor = db.cursor()
 
-    try:
-        with open(DATA_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return {}
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS messages (
+    guild_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (guild_id, user_id)
+)
+""")
 
-
-message_counts = load_data()
-
-
-def save_data():
-    with open(DATA_FILE, "w") as f:
-        json.dump(message_counts, f, indent=4)
+db.commit()
 
 
 def get_count(guild_id, user_id):
-    guild_id = str(guild_id)
-    user_id = str(user_id)
+    cursor.execute(
+        "SELECT count FROM messages WHERE guild_id = ? AND user_id = ?",
+        (str(guild_id), str(user_id))
+    )
 
-    if guild_id not in message_counts:
-        message_counts[guild_id] = {}
+    result = cursor.fetchone()
 
-    return message_counts[guild_id].get(user_id, 0)
+    if result:
+        return result[0]
+
+    return 0
+
+
+def add_message(guild_id, user_id):
+    cursor.execute("""
+        INSERT INTO messages (guild_id, user_id, count)
+        VALUES (?, ?, 1)
+        ON CONFLICT(guild_id, user_id)
+        DO UPDATE SET count = count + 1
+    """, (str(guild_id), str(user_id)))
+
+    db.commit()
+
+
+# =========================
+# BOT
+# =========================
+
+intents = discord.Intents.default()
+intents.message_content = True
+
+bot = commands.Bot(
+    command_prefix="-",
+    intents=intents
+)
 
 
 # =========================
@@ -94,89 +102,91 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    # Only count messages in #general
-    if message.guild and message.channel.id == GENERAL_CHANNEL_ID:
+    # Only count messages in the specified channel
+    if (
+        message.guild is not None
+        and message.channel.id == GENERAL_CHANNEL_ID
+    ):
+        add_message(
+            message.guild.id,
+            message.author.id
+        )
 
-        guild_id = str(message.guild.id)
-        user_id = str(message.author.id)
-
-        if guild_id not in message_counts:
-            message_counts[guild_id] = {}
-
-        if user_id not in message_counts[guild_id]:
-            message_counts[guild_id][user_id] = 0
-
-        message_counts[guild_id][user_id] += 1
-
-        save_data()
-
-    # Make sure prefix commands still work
+    # Process prefix commands ONCE
     await bot.process_commands(message)
 
 
 # =========================
-# -m COMMAND
+# -m
 # =========================
 
 @bot.command(name="m")
-async def message_count(ctx):
+async def m_command(ctx):
 
-    # Only allow command in a server
-    if not ctx.guild:
+    if ctx.guild is None:
         return
 
-    count = get_count(ctx.guild.id, ctx.author.id)
+    count = get_count(
+        ctx.guild.id,
+        ctx.author.id
+    )
 
     embed = discord.Embed(
         title="Message Counter",
         description=(
             f"{ARROW} **User:** {ctx.author.mention}\n"
-            f"{ARROW} **Messages in #general:** `{count}`"
+            f"{ARROW} **Messages:** `{count}`"
         ),
         color=discord.Color.blurple()
     )
 
-    embed.set_thumbnail(url=ctx.author.display_avatar.url)
+    embed.set_thumbnail(
+        url=ctx.author.display_avatar.url
+    )
 
     await ctx.send(embed=embed)
 
 
 # =========================
-# /messages COMMAND
+# /messages
 # =========================
 
 @bot.tree.command(
     name="messages",
-    description="Check your messages sent in #general"
+    description="Check your messages in General"
 )
 async def messages(interaction: discord.Interaction):
 
-    if not interaction.guild:
+    if interaction.guild is None:
         await interaction.response.send_message(
             "This command can only be used in a server.",
             ephemeral=True
         )
         return
 
-    count = get_count(interaction.guild.id, interaction.user.id)
+    count = get_count(
+        interaction.guild.id,
+        interaction.user.id
+    )
 
     embed = discord.Embed(
         title="Message Counter",
         description=(
             f"{ARROW} **User:** {interaction.user.mention}\n"
-            f"{ARROW} **Messages in #general:** `{count}`"
+            f"{ARROW} **Messages:** `{count}`"
         ),
         color=discord.Color.blurple()
     )
 
-    embed.set_thumbnail(url=interaction.user.display_avatar.url)
+    embed.set_thumbnail(
+        url=interaction.user.display_avatar.url
+    )
 
     await interaction.response.send_message(embed=embed)
 
 
 # =========================
-# START BOT
+# START
 # =========================
 
-if __name__ == "__main__":
-    bot.run(TOKEN)
+bot.run(TOKEN)
