@@ -11,7 +11,7 @@ import os
 TOKEN = os.getenv("TOKEN") or "PASTE_YOUR_BOT_TOKEN_HERE"
 
 # Change this if your channel is named something other than "general"
-GENERAL_CHANNEL_NAME = "general"
+GENERAL_CHANNEL_NAME = "💬┆chat"
 
 PREFIX = "-"
 
